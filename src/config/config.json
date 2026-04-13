@@ -1,0 +1,19 @@
+{
+  "url_login": "https://support.codisysdc.com/Res_Consola/ConsolaTickets_Action",
+  "email": "ggbudoia@codisys.es",
+  "correo_login": "gabbudoia@hotmail.com",
+  "download_path": "informes/",
+  "destinatarios": [
+    "gabbudoia@gmail.com"
+  ],
+
+  "chrome": {
+        "caminho": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        "headless": true,
+        "user_data_dir": "C:\\ChromeAutomation",
+        "window_size": "1920,1080",
+        "disable_gpu": true,
+        "no_sandbox": true,
+        "disable_dev_shm_usage": true
+    }
+}

@@ -1,0 +1,14 @@
+Este projeto usa win32com (Outlook local) para enviar emails, o que impede automação completa porque depende do Outlook instalado e autenticado no Windows.
+
+Preciso migrar o envio de email para usar Microsoft Graph API com autenticação via Azure App Registration (client credentials / app code), para que o envio seja 100% automatizado sem depender de nenhuma aplicação local.
+
+Antes de escrever qualquer código, analisa o projeto completo e responde-me:
+
+1. Que ficheiros serão afectados pela mudança?
+2. Que novas dependências serão necessárias?
+3. Que credenciais Azure precisarei de configurar (tenant_id, client_id, client_secret, etc.)?
+4. Haverá alguma quebra de funcionalidade noutras partes do projeto com esta mudança?
+5. Qual é o teu plano de implementação passo a passo?
+
+Apresenta o plano completo e aguarda a minha confirmação antes de alterar qualquer ficheiro.
+Todas as credenciais Azure devem ir para variáveis de ambiente — nunca em config.json ou em código.	
