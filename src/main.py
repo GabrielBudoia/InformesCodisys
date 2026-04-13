@@ -2,6 +2,9 @@ import os
 import time
 import traceback
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from src.features.login import fazer_login
 from src.features.filtros import baixar_relatorio
