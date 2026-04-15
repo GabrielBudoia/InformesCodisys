@@ -1,0 +1,67 @@
+name: Informes Diários — ALSEA & RESTALIA
+
+on:
+  schedule:
+    # Executa de segunda a sexta às 17:55 UTC
+    # = 18:55 Lisboa (horário de verão / WEST UTC+1)
+    # = 17:55 Lisboa (horário de inverno / WET UTC+0)
+    # Para ajustar: https://crontab.guru
+    - cron: '55 17 * * 1-5'
+  workflow_dispatch:
+    # Permite execução manual pelo portal GitHub (botão "Run workflow")
+
+jobs:
+  informes:
+    name: Gerar e enviar relatório diário
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # 1. Checkout do código
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      # 2. Instalar Google Chrome no runner Ubuntu
+      - name: Instalar Google Chrome
+        run: |
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update -q
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      # 3. Configurar Python
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 4. Instalar dependências Python
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      # 5. Criar pasta de downloads (necessária para o script)
+      - name: Criar pasta de downloads
+        run: mkdir -p informes src/logs
+
+      # 6. Executar a automação
+      - name: Executar automação de informes
+        env:
+          # Credenciais do portal Codisys
+          CODISYS_EMAIL: ${{ secrets.CODISYS_EMAIL }}
+          senha: ${{ secrets.SENHA }}
+          # Azure AD / Microsoft Graph API — autenticação e envio de email
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          MAIL_SENDER: ${{ secrets.MAIL_SENDER }}
+        run: python -m src.main
+
+      # 7. Mostrar log completo se a execução falhar
+      - name: Mostrar log em caso de falha
+        if: failure()
+        run: |
+          echo "=== LOG DE EXECUÇÃO ==="
+          cat src/logs/execucao.txt || echo "(sem log disponível)"

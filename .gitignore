@@ -1,0 +1,52 @@
+# Credenciais e configurações locais — NUNCA commitar
+.env
+*.env
+config.local.*
+secrets.*
+*.pem
+*.key
+*.p12
+local.settings.json
+
+# Logs e ficheiros de execução
+src/logs/
+logs/
+*.log
+execucao.txt
+execucao.lock
+
+# Relatórios descarregados (ficheiros gerados)
+informes/
+downloads/
+tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Ambientes virtuais
+.venv/
+venv/
+
+# Build / distribuição
+build/
+dist/
+*.spec
+*.egg-info/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Chrome profile data (gerado pelo Selenium)
+chrome_data/
+
+# Lock file de execução
+*.lock
+
+# Memória e configuração local do Claude Code
+.claude/

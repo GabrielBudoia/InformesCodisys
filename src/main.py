@@ -1,5 +1,7 @@
 import os
+import sys
 import time
+import signal
 import traceback
 from datetime import datetime
 from dotenv import load_dotenv
@@ -17,13 +19,73 @@ from src.core.extrair_dados import extrair_dados_planilha, montar_email
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 LOG_FILE = os.path.join(LOG_DIR, "execucao.txt")
+LOCK_FILE = os.path.join(LOG_DIR, "execucao.lock")
 
+
+# ──────────────────────────────────────────
+# LOGGING DUPLO: ficheiro + stdout
+# ──────────────────────────────────────────
 
 def escrever_log(mensagem):
     os.makedirs(LOG_DIR, exist_ok=True)
+    linha = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n"
     with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
+        f.write(linha)
+    sys.stdout.write(linha)
+    sys.stdout.flush()
 
+
+# ──────────────────────────────────────────
+# LOCK FILE — evita duas instâncias simultâneas
+# ──────────────────────────────────────────
+
+def criar_lock():
+    if os.path.exists(LOCK_FILE):
+        with open(LOCK_FILE, "r", encoding="utf-8") as f:
+            conteudo = f.read().strip()
+        raise RuntimeError(
+            f"[ERRO] Já existe uma instância em execução (lock: {conteudo}). "
+            "Se o processo anterior terminou de forma inesperada, apaga manualmente: "
+            f"{LOCK_FILE}"
+        )
+    os.makedirs(LOG_DIR, exist_ok=True)
+    with open(LOCK_FILE, "w", encoding="utf-8") as f:
+        f.write(f"pid={os.getpid()} iniciado={datetime.now().isoformat()}")
+
+
+def remover_lock():
+    if os.path.exists(LOCK_FILE):
+        try:
+            os.remove(LOCK_FILE)
+        except Exception:
+            pass
+
+
+# ──────────────────────────────────────────
+# EMAIL DE ALERTA EM FALHA FATAL
+# ──────────────────────────────────────────
+
+def enviar_alerta_falha(config, tb):
+    """Envia email com traceback quando o script falha de forma irrecuperável."""
+    try:
+        data_atual = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        assunto = f"[ALERTA] Falha no script de Informes — {data_atual}"
+        corpo = (
+            "O script de geração de relatórios terminou com um erro irrecuperável.\n\n"
+            f"Data/hora: {data_atual}\n\n"
+            "─── TRACEBACK ───\n"
+            f"{tb}"
+        )
+        enviar_email(config, assunto=assunto, corpo=corpo, anexos=None)
+        escrever_log("[INFO] Email de alerta de falha enviado.")
+    except Exception:
+        escrever_log("[WARN] Não foi possível enviar email de alerta:")
+        escrever_log(traceback.format_exc())
+
+
+# ──────────────────────────────────────────
+# UTILITÁRIOS
+# ──────────────────────────────────────────
 
 def arquivo_mais_recente(pasta, prefixo):
     arquivos = [
@@ -64,34 +126,64 @@ def manter_apenas_10_mais_recentes(caminho_pasta):
     escrever_log(f"[DEBUG] Limpeza concluída. {len(arquivos_para_apagar)} arquivo(s) removido(s).")
 
 
+# ──────────────────────────────────────────
+# MAIN
+# ──────────────────────────────────────────
+
 def main():
+    # --- Lock file ---
+    try:
+        criar_lock()
+    except RuntimeError as e:
+        # Usa print directo porque o log ainda pode não estar pronto
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
     escrever_log("[DEBUG] Iniciando sistema...")
 
+    config = None
+    driver = None
+
+    # --- Handler de sinais (SIGTERM / SIGINT) para encerramento limpo no servidor ---
+    def handle_signal(signum, frame):
+        escrever_log(f"[WARN] Sinal {signum} recebido. Encerrando graciosamente...")
+        if driver:
+            try:
+                driver.quit()
+                escrever_log("[DEBUG] Navegador fechado por sinal.")
+            except Exception:
+                pass
+        remover_lock()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    # --- Carregar configuração ---
     try:
         config = load_config()
         escrever_log("[DEBUG] Configuração carregada com sucesso.")
     except Exception:
+        tb = traceback.format_exc()
         escrever_log("[ERRO] Falha ao carregar configuração.")
-        escrever_log(traceback.format_exc())
+        escrever_log(tb)
+        remover_lock()
         return
 
-    # ==========================
-    # SENHA VIA VARIÁVEL DE AMBIENTE
-    # ==========================
+    # --- Senha via variável de ambiente ---
     senha_web = os.getenv("senha")
     if not senha_web:
         escrever_log("[ERRO] Variável de ambiente 'senha' não encontrada.")
+        remover_lock()
         raise RuntimeError("Variável de ambiente 'senha' não encontrada.")
 
     pasta_download = os.path.abspath(config["download_path"])
     os.makedirs(pasta_download, exist_ok=True)
     escrever_log(f"[DEBUG] Pasta de download: {pasta_download}")
 
-    driver = None
-
     try:
         # ==========================
-        # LOGIN
+        # LOGIN E DOWNLOADS
         # ==========================
         escrever_log("[DEBUG] Criando navegador Chrome...")
         driver = create_browser()
@@ -143,8 +235,11 @@ def main():
         escrever_log("[DEBUG] Downloads concluídos.")
 
     except Exception:
+        tb = traceback.format_exc()
         escrever_log("[ERRO] Falha durante automação.")
-        escrever_log(traceback.format_exc())
+        escrever_log(tb)
+        if config:
+            enviar_alerta_falha(config, tb)
 
     finally:
         if driver:
@@ -187,8 +282,11 @@ def main():
             escrever_log("[WARN] Nenhum arquivo para enviar.")
 
     except Exception:
+        tb = traceback.format_exc()
         escrever_log("[ERRO] Falha ao processar arquivos ou enviar email.")
-        escrever_log(traceback.format_exc())
+        escrever_log(tb)
+        if config:
+            enviar_alerta_falha(config, tb)
 
     # ==========================
     # LIMPEZA DA PASTA
@@ -200,6 +298,7 @@ def main():
         escrever_log(traceback.format_exc())
 
     escrever_log("[DEBUG] Processo finalizado.")
+    remover_lock()
 
 
 if __name__ == "__main__":
